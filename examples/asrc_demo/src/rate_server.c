@@ -27,12 +27,12 @@
 #include "rate_server.h"
 #include "tusb.h"
 
-#define LOG_I2S_TO_USB_SIDE (0)
+#define LOG_I2S_TO_USB_SIDE (1)
 #define LOG_USB_TO_I2S_SIDE (0)
 
 #define REF_CLOCK_TICKS_PER_SECOND 100000000
 
-static uint32_t g_i2s_to_usb_rate_ratio = 0; // i2s_to_usb_rate_ratio. Updated in rate monitor and used in i2s_audio_recv_task
+static uint64_t g_i2s_to_usb_rate_ratio = 0; // i2s_to_usb_rate_ratio. Updated in rate monitor and used in i2s_audio_recv_task
 static int32_t g_avg_i2s_send_buffer_level = 0; // avg i2s send buffer level. Updated in usb_to_i2s_intertile(), used in rate monitor for buffer level based PI control
 static int32_t g_prev_avg_i2s_send_buffer_level = 0; // Previous avg i2s send buffer level. Updated in usb_to_i2s_intertile(), used in rate monitor for buffer level based PI control
 static bool g_spkr_itf_close_to_open = false; // Flag tracking if a USB spkr interface close->open event occured. Set in the rate monitor when it receives the spkr_interface info from
@@ -49,12 +49,12 @@ void set_spkr_itf_close_open_event(bool event)
 }
 
 
-uint32_t get_i2s_to_usb_rate_ratio()
+uint64_t get_i2s_to_usb_rate_ratio()
 {
     return g_i2s_to_usb_rate_ratio;
 }
 
-void set_i2s_to_usb_rate_ratio(uint32_t ratio)
+void set_i2s_to_usb_rate_ratio(uint64_t ratio)
 {
     g_i2s_to_usb_rate_ratio = ratio;
 
@@ -270,7 +270,7 @@ void rate_server(void *args)
                 fs_ratio = (unsigned) (((buffer_level_term + error) * (unsigned long long)fs_ratio) / buffer_level_term);
             }
 
-            set_i2s_to_usb_rate_ratio(fs_ratio);
+            set_i2s_to_usb_rate_ratio((uint64_t)((uint64_t)fs_ratio << 32));
 
             if(reset_buf_level)
             {
@@ -279,7 +279,7 @@ void rate_server(void *args)
         }
         else
         {
-            set_i2s_to_usb_rate_ratio(0);
+            set_i2s_to_usb_rate_ratio((uint64_t)0);
             reset_buf_level = true;
         }
 
@@ -332,7 +332,7 @@ void rate_server(void *args)
         }
 
         // Notify USB tile of the usb_to_i2s rate ratio
-        i2s_rate_info.usb_to_i2s_rate_ratio = usb_to_i2s_rate_ratio;
+        i2s_rate_info.usb_to_i2s_rate_ratio = (uint64_t)((uint64_t)usb_to_i2s_rate_ratio << 32);
 
         rtos_intertile_tx(
             intertile_ctx,

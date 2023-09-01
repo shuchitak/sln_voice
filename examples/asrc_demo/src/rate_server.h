@@ -8,8 +8,8 @@ void rate_server(void *args);
 void calc_avg_i2s_send_buffer_level(int current_level, bool reset);
 
 // Getters and setters for various global variables
-uint32_t get_i2s_to_usb_rate_ratio();
-void set_i2s_to_usb_rate_ratio(uint32_t ratio);
+uint64_t get_i2s_to_usb_rate_ratio();
+void set_i2s_to_usb_rate_ratio(uint64_t ratio);
 bool get_spkr_itf_close_open_event();
 void set_spkr_itf_close_open_event(bool event);
 
@@ -30,7 +30,7 @@ typedef struct
 typedef struct
 {
     /* data */
-    uint32_t usb_to_i2s_rate_ratio;
+    uint64_t usb_to_i2s_rate_ratio;
 }i2s_to_usb_rate_info_t;
 
 #endif
