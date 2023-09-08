@@ -27,7 +27,7 @@
 #include "rate_server.h"
 #include "tusb.h"
 
-#define LOG_I2S_TO_USB_SIDE (1)
+#define LOG_I2S_TO_USB_SIDE (0)
 #define LOG_USB_TO_I2S_SIDE (0)
 
 #define REF_CLOCK_TICKS_PER_SECOND 100000000
@@ -206,7 +206,7 @@ typedef int32_t sw_pll_15q16_t; // Type for 15.16 signed fixed point
 
 void rate_server(void *args)
 {
-    uint32_t usb_to_i2s_rate_ratio = 0;
+    uint64_t usb_to_i2s_rate_ratio = 0;
     int32_t usb_buffer_fill_level_from_half;
     static bool reset_buf_level = false;
     static bool prev_spkr_itf_open = false;
@@ -252,10 +252,18 @@ void rate_server(void *args)
             int32_t buffer_level_term = BUFFER_LEVEL_TERM;
             int32_t fs_ratio = float_div_fixed_output_q_format(i2s_rate, usb_rate[TUSB_DIR_IN], 28);
 
+            uint64_t fs_ratio_u64 = float_div_u64_fixed_output_q_format(i2s_rate, usb_rate[TUSB_DIR_IN], 28+32);
+
 #if LOG_I2S_TO_USB_SIDE
             printint(usb_buffer_fill_level_from_half);
             printchar(',');
-            printintln(fs_ratio);
+            printintln((uint32_t)(fs_ratio_u64 >> 32));
+
+            //printuint((uint32_t)(fs_ratio_u64 >> 32));
+            //printchar(',');
+            //printuintln((uint32_t)(fs_ratio_u64));
+            //printuintln(fs_ratio);
+
 #endif
 
             int guard_level = 100;
@@ -270,7 +278,8 @@ void rate_server(void *args)
                 fs_ratio = (unsigned) (((buffer_level_term + error) * (unsigned long long)fs_ratio) / buffer_level_term);
             }
 
-            set_i2s_to_usb_rate_ratio((uint64_t)((uint64_t)fs_ratio << 32));
+            //set_i2s_to_usb_rate_ratio((uint64_t)((uint64_t)fs_ratio << 32));
+            set_i2s_to_usb_rate_ratio(fs_ratio_u64);
 
             if(reset_buf_level)
             {
@@ -287,6 +296,8 @@ void rate_server(void *args)
         if((i2s_rate.mant != 0) && (usb_rate_info.spkr_itf_open))
         {
             int32_t fs_ratio = float_div_fixed_output_q_format(usb_rate[TUSB_DIR_OUT], i2s_rate, 28);
+
+            uint64_t fs_ratio64 = float_div_u64_fixed_output_q_format(usb_rate[TUSB_DIR_OUT], i2s_rate, 28+32);
 
             int64_t error_d = ((int64_t)Kd * (int64_t)(g_avg_i2s_send_buffer_level - g_prev_avg_i2s_send_buffer_level));
             int64_t error_i = ((int64_t)Ki * (int64_t)g_avg_i2s_send_buffer_level);
@@ -323,7 +334,7 @@ void rate_server(void *args)
                 fs_ratio = (unsigned) (((BUFFER_LEVEL_TERM + error) * (unsigned long long)fs_ratio) / BUFFER_LEVEL_TERM);
             }*/
 
-            usb_to_i2s_rate_ratio = fs_ratio + total_error;
+            usb_to_i2s_rate_ratio = fs_ratio64;// + total_error;
 
         }
         else
@@ -332,7 +343,8 @@ void rate_server(void *args)
         }
 
         // Notify USB tile of the usb_to_i2s rate ratio
-        i2s_rate_info.usb_to_i2s_rate_ratio = (uint64_t)((uint64_t)usb_to_i2s_rate_ratio << 32);
+        //i2s_rate_info.usb_to_i2s_rate_ratio = (uint64_t)((uint64_t)usb_to_i2s_rate_ratio << 32);
+        i2s_rate_info.usb_to_i2s_rate_ratio = usb_to_i2s_rate_ratio;
 
         rtos_intertile_tx(
             intertile_ctx,
@@ -370,9 +382,10 @@ uint32_t dsp_math_divide_unsigned(uint32_t dividend, uint32_t divisor, uint32_t 
 }
 #endif //__xcore__
 
-float_s32_t float_div(float_s32_t dividend, float_s32_t divisor)
+
+float_u64_t float_div_u64(float_s32_t dividend, float_s32_t divisor)
 {
-    float_s32_t res;// = float_s32_div(dividend, divisor);
+    float_u64_t res;
 
     int dividend_hr;
     int divisor_hr;
@@ -387,40 +400,31 @@ float_s32_t float_div(float_s32_t dividend, float_s32_t divisor)
 
     uint32_t h_divisor = ((uint32_t)divisor.mant) << (divisor_hr);
 
-    uint32_t lhs = (h_dividend > h_divisor) ? 31 : 32;
+    //uint32_t lhs = (h_dividend > h_divisor) ? 31 : 32;
+    uint32_t lhs = 32;
 
     uint64_t quotient = (h_dividend << lhs) / h_divisor;
 
     res.exp = dividend_exp - divisor_exp - lhs;
 
-    res.mant = (uint32_t)(quotient) ;
+    res.mant = quotient ;
     return res;
 }
 
-uint32_t float_div_fixed_output_q_format(float_s32_t dividend, float_s32_t divisor, int32_t output_q_format)
+uint64_t float_div_u64_fixed_output_q_format(float_s32_t dividend, float_s32_t divisor, int32_t output_q_format)
 {
     int op_q = -output_q_format;
-    float_s32_t res = float_div(dividend, divisor);
-    uint32_t quotient;
+    float_u64_t res = float_div_u64(dividend, divisor);
+    uint64_t quotient;
     if(res.exp < op_q)
     {
         int rsh = op_q - res.exp;
-        quotient = ((uint32_t)res.mant >> rsh) + (((uint32_t)res.mant >> (rsh-1)) & 0x1);
+        quotient = ((uint64_t)res.mant >> rsh) + (((uint64_t)res.mant >> (rsh-1)) & 0x1);
     }
     else
     {
         int lsh = res.exp - op_q;
-        quotient = (uint32_t)res.mant << lsh;
+        quotient = (uint64_t)res.mant << lsh;
     }
     return quotient;
-}
-
-uint32_t sum_array(uint32_t * array_to_sum, uint32_t array_length)
-{
-    uint32_t acc = 0;
-    for (uint32_t i = 0; i < array_length; i++)
-    {
-        acc += array_to_sum[i];
-    }
-    return acc;
 }

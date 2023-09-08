@@ -4,15 +4,30 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "rate_server.h"
-
-#include "xmath/xmath.h"
-#define TOTAL_TAIL_SECONDS 16
+#define TOTAL_TAIL_SECONDS 128
 #define STORED_PER_SECOND 4
 
 #if __xcore__
+#include "xmath/xmath.h"
+#include "rate_server.h"
 #include "tusb_config.h"
 #include "app_conf.h"
+
+#else //__xcore__
+
+#define appconfUSB_AUDIO_SAMPLE_RATE       (48000)
+#define CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_RX (4)
+#define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX (2)
+#define CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX (4)
+#define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX (2)
+typedef struct
+{
+    int32_t mant;
+    int32_t exp;
+}float_s32_t;
+
+#endif //__xcore__
+
 #define EXPECTED_OUT_BYTES_PER_TRANSACTION (CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_RX * \
                                        CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX * \
                                        appconfUSB_AUDIO_SAMPLE_RATE / 1000)
@@ -23,14 +38,6 @@
 #define EXPECTED_OUT_SAMPLES_PER_TRANSACTION (appconfUSB_AUDIO_SAMPLE_RATE / 1000)
 #define EXPECTED_IN_SAMPLES_PER_TRANSACTION  (appconfUSB_AUDIO_SAMPLE_RATE / 1000)
 
-#else //__xcore__
-// If we're compiling this for x86 we're probably testing it - just assume some values
-#define EXPECTED_OUT_BYTES_PER_TRANSACTION  128 //16kbps * 16-bit * 4ch
-#define EXPECTED_IN_BYTES_PER_TRANSACTION   192 //16kbps * 16-bit * 6ch
-
-#define EXPECTED_OUT_SAMPLES_PER_TRANSACTION  (EXPECTED_OUT_BYTES_PER_TRANSACTION/(2*4)) //16kbps * 4ch
-#define EXPECTED_IN_SAMPLES_PER_TRANSACTION   (EXPECTED_IN_BYTES_PER_TRANSACTION/(2*6)) //16kbps * 6ch
-#endif //__xcore__
 
 #define TOTAL_STORED (TOTAL_TAIL_SECONDS * STORED_PER_SECOND)
 #define REF_CLOCK_TICKS_PER_SECOND 100000000
@@ -43,6 +50,67 @@ bool first_time[2] = {true, true};
 volatile static bool data_seen = false;
 volatile static bool hold_average = false;
 uint32_t bucket_expected[2] = {EXPECTED_OUT_SAMPLES_PER_BUCKET, EXPECTED_IN_SAMPLES_PER_BUCKET};
+
+uint64_t sum_array(uint32_t * array_to_sum, uint32_t array_length)
+{
+    uint64_t acc = 0;
+    for (uint32_t i = 0; i < array_length; i++)
+    {
+        acc += array_to_sum[i];
+    }
+    return acc;
+}
+
+// Math functions
+float_s32_t float_div(float_s32_t dividend, float_s32_t divisor)
+{
+    float_s32_t res;// = float_s32_div(dividend, divisor);
+
+    int dividend_hr;
+    int divisor_hr;
+
+#if __xcore__
+    asm( "clz %0, %1" : "=r"(dividend_hr) : "r"(dividend.mant) );
+    asm( "clz %0, %1" : "=r"(divisor_hr) : "r"(divisor.mant) );
+#else
+    dividend_hr = __builtin_clz(dividend.mant);
+    divisor_hr =  __builtin_clz(divisor.mant);
+#endif
+
+    int dividend_exp = dividend.exp - dividend_hr;
+    int divisor_exp = divisor.exp - divisor_hr;
+
+    uint64_t h_dividend = (uint64_t)((uint32_t)dividend.mant) << (dividend_hr);
+
+    uint32_t h_divisor = ((uint32_t)divisor.mant) << (divisor_hr);
+
+    uint32_t lhs = (h_dividend > h_divisor) ? 31 : 32;
+
+    uint64_t quotient = (h_dividend << lhs) / h_divisor;
+
+    res.exp = dividend_exp - divisor_exp - lhs;
+
+    res.mant = (uint32_t)(quotient) ;
+    return res;
+}
+
+uint32_t float_div_fixed_output_q_format(float_s32_t dividend, float_s32_t divisor, int32_t output_q_format)
+{
+    int op_q = -output_q_format;
+    float_s32_t res = float_div(dividend, divisor);
+    uint32_t quotient;
+    if(res.exp < op_q)
+    {
+        int rsh = op_q - res.exp;
+        quotient = ((uint32_t)res.mant >> rsh) + (((uint32_t)res.mant >> (rsh-1)) & 0x1);
+    }
+    else
+    {
+        int lsh = res.exp - op_q;
+        quotient = (uint32_t)res.mant << lsh;
+    }
+    return quotient;
+}
 
 void reset_state()
 {
@@ -62,6 +130,12 @@ float_s32_t determine_USB_audio_rate(uint32_t timestamp,
 #endif
 )
 {
+    printuint(direction);
+    printchar(',');
+    printuint(timestamp);
+    printchar(',');
+    printuintln(data_length);
+
     static uint32_t data_lengths[2][TOTAL_STORED];
     static uint32_t time_buckets[2][TOTAL_STORED];
     static uint32_t current_data_bucket_size[2];
@@ -129,8 +203,21 @@ float_s32_t determine_USB_audio_rate(uint32_t timestamp,
     uint32_t timespan = timestamp - first_timestamp[direction];
 
     uint32_t total_data_intermed = current_data_bucket_size[direction] + sum_array(data_lengths[direction], TOTAL_STORED);
-    uint32_t total_timespan = timespan + sum_array(time_buckets[direction], TOTAL_STORED);
-    float_s32_t float_s32_data_per_sample = float_div((float_s32_t){total_data_intermed, 0}, (float_s32_t){total_timespan, 0});
+    uint64_t total_timespan = timespan + sum_array(time_buckets[direction], TOTAL_STORED);
+
+    //int hr_total_timespan = __builtin_clz((uint32_t)(total_timespan >> 32));
+    int hr_total_timespan;
+    asm( "clz %0, %1" : "=r"(hr_total_timespan) : "r"((uint32_t)(total_timespan >> 32)) );
+    if(hr_total_timespan < 32)
+    {
+        int shift = 32 - hr_total_timespan;
+        //printf("1...total_timespan = %llx shift = %d, total_data_intermed = 0x%lx\n", total_timespan, shift, total_data_intermed);
+        total_timespan = total_timespan >> shift;
+        total_data_intermed = total_data_intermed >> shift;
+        //printf("total_timespan = %llx shift = %d, total_data_intermed = 0x%lx\n", total_timespan, shift, total_data_intermed);
+    }
+
+    float_s32_t float_s32_data_per_sample = float_div((float_s32_t){total_data_intermed, 0}, (float_s32_t){(uint32_t)total_timespan, 0});
 
     float_s32_t result = float_s32_data_per_sample;
 
