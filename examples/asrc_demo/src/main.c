@@ -99,6 +99,10 @@ void main_tile0(chanend_t c0, chanend_t c1, chanend_t c2, chanend_t c3)
     (void) c0;
     (void) c2;
     (void) c3;
+#if (USE_TRACE_MODE == TRACE_MODE_TRACEALYZER_STREAMING)
+    xTraceInitialize();
+    xTraceEnable(TRC_START);
+#endif
 
     tile_common_init(c1);
 }
@@ -110,10 +114,6 @@ void main_tile1(chanend_t c0, chanend_t c1, chanend_t c2, chanend_t c3)
     (void) c1;
     (void) c2;
     (void) c3;
-#if (USE_TRACE_MODE == TRACE_MODE_TRACEALYZER_STREAMING)
-    xTraceInitialize();
-    xTraceEnable(TRC_START);
-#endif
 
     tile_common_init(c0);
 }

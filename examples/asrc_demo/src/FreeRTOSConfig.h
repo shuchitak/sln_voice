@@ -64,11 +64,11 @@ your application. */
 
 /* Run time and task stats gathering related definitions. */
 #if ON_TILE(0)
-#define configGENERATE_RUN_TIME_STATS           0
-#define configUSE_TRACE_FACILITY                0
-#else
 #define configGENERATE_RUN_TIME_STATS           1
 #define configUSE_TRACE_FACILITY                1
+#else
+#define configGENERATE_RUN_TIME_STATS           0
+#define configUSE_TRACE_FACILITY                0
 #endif
 
 #define configUSE_STATS_FORMATTING_FUNCTIONS    2 /* Setting to 2 does not include <stdio.h> in tasks.c */
