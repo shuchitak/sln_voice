@@ -3,7 +3,7 @@
 // XMOS Public License: Version 1
 
 #define DEBUG_UNIT APP_MAIN
-#define DEBUG_PRINT_ENABLE_APP_MAIN 1
+#define DEBUG_PRINT_ENABLE_APP_MAIN 0
 
 #include <platform.h>
 #include <xs1.h>
@@ -110,6 +110,10 @@ void main_tile1(chanend_t c0, chanend_t c1, chanend_t c2, chanend_t c3)
     (void) c1;
     (void) c2;
     (void) c3;
+#if (USE_TRACE_MODE == TRACE_MODE_TRACEALYZER_STREAMING)
+    xTraceInitialize();
+    xTraceEnable(TRC_START);
+#endif
 
     tile_common_init(c0);
 }

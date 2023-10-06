@@ -3,7 +3,7 @@
 // XMOS Public License: Version 1
 
 #define DEBUG_UNIT I2S_AUDIO
-#define DEBUG_PRINT_ENABLE_I2S_AUDIO 1
+#define DEBUG_PRINT_ENABLE_I2S_AUDIO 0
 
 /* STD headers */
 #include <stdio.h>

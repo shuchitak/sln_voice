@@ -4,6 +4,7 @@
 file(GLOB APP_SOURCES ${CMAKE_CURRENT_LIST_DIR}/src/*.c ${CMAKE_CURRENT_LIST_DIR}/src/usb/*.c ${CMAKE_CURRENT_LIST_DIR}/src/gpio_test/*.c)
 set(APP_INCLUDES
     ${CMAKE_CURRENT_LIST_DIR}/src
+    ${CMAKE_CURRENT_LIST_DIR}/src/trc
     ${CMAKE_CURRENT_LIST_DIR}/src/usb
 )
 
@@ -23,6 +24,7 @@ set(APP_COMPILER_FLAGS
 )
 
 set(APP_COMPILE_DEFINITIONS
+    USE_TRACE_MODE=TRACE_MODE_TRACEALYZER_STREAMING
     DEBUG_PRINT_ENABLE=1
     PLATFORM_USES_TILE_0=1
     PLATFORM_USES_TILE_1=1
@@ -42,6 +44,7 @@ set(APP_COMMON_LINK_LIBRARIES
     rtos::freertos_usb
     rtos::drivers::custom_i2s_with_rate_calc
     lib_src
+    rtos::drivers::trace
 )
 
 #**********************

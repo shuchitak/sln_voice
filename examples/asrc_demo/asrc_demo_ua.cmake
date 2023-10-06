@@ -58,6 +58,7 @@ merge_binaries(example_asrc_demo tile0_example_asrc_demo tile1_example_asrc_demo
 create_run_target(example_asrc_demo)
 create_debug_target(example_asrc_demo)
 create_upgrade_img_target(example_asrc_demo ${XTC_VERSION_MAJOR} ${XTC_VERSION_MINOR})
+create_run_xscope_to_file_target(example_asrc_demo freertos_trace)
 
 #**********************
 # Create data partition support targets
