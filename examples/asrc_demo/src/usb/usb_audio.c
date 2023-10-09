@@ -401,7 +401,6 @@ void usb_audio_send(int32_t *frame_buffer_ptr, // buffer containing interleaved 
         {
             if (xStreamBufferSpacesAvailable(samples_to_host_stream_buf) >= usb_audio_in_size_bytes)
             {
-                //printcharln('W');
                 xStreamBufferSend(samples_to_host_stream_buf, usb_audio_in_frame, usb_audio_in_size_bytes, 0);
 
                 int32_t usb_buffer_level_from_half = (int32_t)((int32_t)xStreamBufferBytesAvailable(samples_to_host_stream_buf) - (samples_to_host_stream_buf_size_bytes / 2)) / (int32_t)8;    //Level w.r.t. half full in samples
@@ -1118,13 +1117,6 @@ bool tud_audio_tx_done_pre_load_cb(uint8_t rhport,
     size_t bytes_available;
     size_t tx_size_bytes;
     size_t tx_size_frames;
-    /*static uint32_t prev_ts = 0;
-
-    uint32_t ts = get_reference_time();
-
-    printchar('R');
-    printuintln(ts - prev_ts);
-    prev_ts = ts;*/
 
     /*
      * This buffer needs to be large enough to hold any size of transaction,
@@ -1278,7 +1270,6 @@ bool tud_audio_set_itf_cb(uint8_t rhport,
         mic_interface_open = false;
         first_frame_after_mic_interface_open = false;
         xStreamBufferReset(samples_to_host_stream_buf);
-        rtos_printf("audio_set_itf: samples_to_host_stream_buf buffer spaces %d\n", xStreamBufferSpacesAvailable(samples_to_host_stream_buf));
     }
 #endif
 
@@ -1305,7 +1296,6 @@ bool tud_audio_set_itf_close_EP_cb(uint8_t rhport,
     {
         mic_interface_open = false;
         first_frame_after_mic_interface_open = false;
-        rtos_printf("audio_set_itf_close: samples_to_host_stream_buf buffer spaces %d\n", xStreamBufferSpacesAvailable(samples_to_host_stream_buf));
     }
 #endif
 
